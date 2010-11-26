@@ -5,9 +5,3 @@
 #   
 #   cities = City.create([{ :name => 'Chicago' }, { :name => 'Copenhagen' }])
 #   Major.create(:name => 'Daley', :city => cities.first)
-
-puts "Loading seeds for environment: #{RAILS_ENV}"
-
-if RAILS_ENV == "development"
-  Node.create_a_few_nodes
-end
