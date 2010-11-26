@@ -2,179 +2,44 @@ class TwilioController < ApplicationController
   # This breaks Twilio applications.
   before_filter :verify_authenticity_token, :only => []
 
-  before_filter :find_node, :only => [:show_node]
   helper_method :give_user_choices
+  include ActionView::Helpers::DateHelper
 
   def index
     say_message_and_redirect(
-      %{
-        Hello.
-        Teladventure is an interactive, phone-based adventure game.
-        You play Teladventure not just by exploring the story, but also by adding to it.
-        Let's get started.
-      },
-      url_for(:action => "show_node"))
+      "Welcome to Teletimer.",
+      url_for(:action => "wait_for_contraction_to_start"))
   end
 
-  def show_node
-    @choices = []
-
-    @node.children.each_with_index do |child, i|
-      @choices << Choice.new(
-        label("child(#{i + 1})"),
-        digits(i + 1),
-        view_block { @xml.Play(child.choice) },
-        controller_block { redirect_to :action => :show_node, :id => child.id }
-      )
-    end
-
-    # It's too confusing if people edit a parent node because usually they'll
-    # break the stories in the child nodes.
-    i = 1
-    if @node.children.empty?
-      @choices << Choice.new(
-        label(:edit_node),
-        digits("*#{i}"),
-        view_block { @xml.Say("edit the current choice and outcome.") },
-        controller_block { redirect_to :action => :edit_node, :id => @node }
-      )
-    end
-
-    i += 1
-    @choices << Choice.new(
-      label(:create_node),
-      digits("*#{i}"),
-      view_block { @xml.Say("create a new choice and outcome.") },
-      controller_block { redirect_to :action => :create_node, :parent_id => @node }
-    )
-
-    i += 1
-    if @node.parent
-      @choices << Choice.new(
-        label("parent"),
-        digits("*#{i}"),
-        view_block { @xml.Say("go back a step.") },
-        controller_block { redirect_to :action => :show_node, :id => @node.parent_id }
-      )
-    end
-
-    i += 1
-    @choices << Choice.new(
-      label("learn_more"),
-      digits("*#{i}"),
-      view_block { @xml.Say("learn more about Teladventure.") },
-      controller_block { redirect_to :action => :learn_more }
-    )
-
-    @choices << Choice.new(
-      label(:start_over),
-      digits(0),
-      view_block { @xml.Say("start over.") },
-      controller_block { redirect_to :action => :index }
-    )
-
-    if request.post?
-      handle_choice
+  def wait_for_contraction_to_start
+    if request.get?
+      @message = "Press any key when the contraction starts."
+      render_xml :action => :pause
     else
-      render_xml
+      session[:start] = Time.now
+      redirect_to :action => :wait_for_contraction_to_stop
     end
   end
 
-  def create_node
-    raise ArgumentError.new("No 'parent_id' parameter passed") unless params[:parent_id]
-    session[:node] = {:parent_id => params[:parent_id]}
-    redirect_to :action => :create_node_pause
-  end
-
-  def create_node_pause
-    pause("You are about to create a new choice and outcome.", :create_node_record_choice)
-  end
-
-  def create_node_record_choice
-    record_node_attr(:record_choice, :choice, :create_node_verify_choice)
-  end
-
-  def create_node_verify_choice
-    confirm(:incorrect => :create_node_record_choice, :correct => :create_node_record_outcome)
-  end
-
-  def create_node_record_outcome
-    record_node_attr(:record_outcome, :outcome, :create_node_verify_outcome)
-  end
-
-  def create_node_verify_outcome
-    confirm(:incorrect => :create_node_record_outcome, :correct => :create_node_congratulations)
-  end
-
-  def create_node_congratulations
-    parent = Node.find(session[:node][:parent_id])
-    parent.children.create!(session[:node])
-    say_message_and_redirect(
-      %Q{
-        You have created a new choice and outcome.
-        You can now continue the adventure where you left off.
-      },
-      url_for(:action => :show_node, :id => parent)
-    )
-  end
-
-  def edit_node
-    raise ArgumentError.new("No 'id' parameter passed") unless params[:id]
-    session[:node] = {:id => params[:id]}
-    redirect_to :action => :edit_node_pause
-  end
-
-  def edit_node_pause
-    pause("You are about to edit the current choice and outcome.", :edit_node_record_choice)
-  end
-
-  def edit_node_record_choice
-    record_node_attr(:record_choice, :choice, :edit_node_verify_choice)
-  end
-
-  def edit_node_verify_choice
-    confirm(:incorrect => :edit_node_record_choice, :correct => :edit_node_record_outcome)
-  end
-
-  def edit_node_record_outcome
-    record_node_attr(:record_outcome, :outcome, :edit_node_verify_outcome)
-  end
-
-  def edit_node_verify_outcome
-    confirm(:incorrect => :edit_node_record_outcome, :correct => :edit_node_congratulations)
-  end
-
-  def edit_node_congratulations
-    node = Node.find(session[:node][:id])
-    node.update_attributes!(session[:node])
-    whats_next = node.parent || node
-    say_message_and_redirect(
-      %Q{
-        You have edited the current choice and outcome.
-        You can now continue the adventure where you left off.
-      },
-      url_for(:action => :show_node, :id => whats_next)
-    )
-  end
-
-  def learn_more
-    say_message_and_redirect(
-      %{
-        Teladventure was created by Shannon -jj Behrens using Ruby on Rails
-        and Twilio.  Please feel free to submit feedback to the author by
-        emailing him at j,j,i,n,u,x,at,g,mail,dot,com.
-
-        Teladventure is open source.  You can get the source code from
-        git,hub,dot,com,slash,j,j,i,n,u,x,slash,t,e,l,adventure.
-      },
-      url_for(:action => :index))
+  def wait_for_contraction_to_stop
+    if request.get?
+      @message = "Press any key when the contraction stops."
+      render_xml :action => :pause
+    else
+      if params[:wait_seconds]
+        stop = session[:start] + params[:wait_seconds].to_i
+      else
+        stop = Time.now
+      end
+      distance = distance_of_time_in_words(session[:start], stop, true)
+      say_message_and_redirect(
+        "The contraction lasted #{distance}.",
+        url_for(:action => :wait_for_contraction_to_start)
+      )
+    end
   end
 
   private
-
-  def find_node
-    @node = params[:id] ? Node.find(params[:id]) : Node.root
-  end
 
   # This is a little DSL for choices:
   #
@@ -292,32 +157,5 @@ class TwilioController < ApplicationController
   # This makes the text-to-speech engine speak phone numbers one digit at a time.
   def space_out(s)
     s.split(//).join(' ')
-  end
-
-  # Give the user a chance to think.
-  def pause(message, next_action)
-    if request.get?
-      @message = %Q{
-        #{message}
-        Take a couple minutes to think about what you will say and press any key when you are ready to continue.
-      }
-      render_xml :action => :pause
-    else
-      redirect_to :action => next_action
-    end
-  end
-
-  # Record something and save it to session[:node][attr_name].
-  # 
-  # Redirect to next_action.
-  def record_node_attr(template, attr_name, next_action)
-    if request.get?
-      render_xml :action => template
-    else
-      @recording = session[:node][attr_name] = params[:RecordingUrl]
-      raise ArgumentError.new("No 'RecordingUrl' parameter passed") unless @recording
-      @redirect = url_for :action => next_action
-      render_xml :action => :play_recording_and_redirect
-    end
   end
 end
