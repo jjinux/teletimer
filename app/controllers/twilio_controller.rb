@@ -16,8 +16,26 @@ class TwilioController < ApplicationController
       @message = "Press any key when the contraction starts."
       render_xml :action => :pause
     else
+      # Have we already had any contractions?
+      old_start = session[:start]
       session[:start] = Time.now
-      redirect_to :action => :wait_for_contraction_to_stop
+      if old_start
+
+        # The wait_seconds is measured since the last contraction started, not
+        # since the last contraction stopped.
+        if params[:wait_seconds]
+          new_start = old_start + params[:wait_seconds].to_i
+        else
+          new_start = session[:start]
+        end
+
+        distance = distance_of_time_in_words(old_start, new_start, true)
+        say_message_and_redirect(
+          "#{distance} have passed since the last contraction.",
+          url_for(:action => :wait_for_contraction_to_stop))
+      else
+        redirect_to :action => :wait_for_contraction_to_stop
+      end
     end
   end
 
