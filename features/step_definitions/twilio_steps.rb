@@ -43,39 +43,12 @@ Then /^it should redirect me if I time out$/ do
   @doc.xpath("/Response/Redirect").should_not be_empty
 end
 
-Given /^there are a few nodes$/ do
-  Node.create_a_few_nodes
-end
-
-Given /^there is a root node$/ do
-  Node.create_a_root_node
-end
-
-When /^I receive a phone call$/ do
+When /^I call the service$/ do
   get url_for(:controller => :twilio)
 end
 
-Then /^it should tell me the current outcome$/ do
-  @doc.xpath("/Response/Gather/Play").should_not be_empty
-end
-
-Then /^it should ask me for the next choice$/ do
-  @doc.xpath("/Response/Gather").should_not be_empty
-end
-
-Then /^it should redirect me to the current node if I haven't made a choice$/ do
-  @doc.xpath("/Response/Redirect").should_not be_empty
-end
-
-When /^I enter "([^"]*)" when I am on the root node$/ do |digits|
-  post_via_redirect url_for(:controller => :twilio, :action => :show_node, :Digits => digits)
-end
-
-When /^I enter "([^"]*)" when I am on the root node's first child$/ do |digits|
-  id = Node.root.children.first.id
-  post_via_redirect url_for(:controller => :twilio, :action => :show_node, :id => id, :Digits => digits)
-end
-
-Then /^there should be a child of the root node with choice "([^"]*)" and outcome "([^"]*)"$/ do |choice, outcome|
-  Node.root.children.find_by_choice_and_outcome(choice, outcome).should_not be_nil
+When /^I enter "([^"]*)" after (\d+) seconds$/ do |digits, wait_seconds|
+  gather = @doc.xpath("/Response/Gather").first
+  gather.should_not be_nil
+  request_via_redirect(sanitize_method(gather[:method]), gather[:action], {:Digits => digits, :wait_seconds => wait_seconds})
 end
